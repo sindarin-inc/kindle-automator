@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kindle Automator — Technical Project Discussion</title>
+  <style>
+    @font-face {
+      font-family: 'Whitney';
+      src: url('WhitneySSm-Light-Bas.otf');
+      font-weight: 300;
+    }
+
+    @font-face {
+      font-family: 'Whitney';
+      src: url('WhitneySSm-Book-Bas.otf');
+      font-weight: 400;
+    }
+
+    @font-face {
+      font-family: 'Whitney';
+      src: url('WhitneySSm-Medium-Bas.otf');
+      font-weight: 500;
+    }
+
+    @font-face {
+      font-family: 'Whitney';
+      src: url('WhitneySSm-Semibold-Bas.otf');
+      font-weight: 600;
+    }
+
+    @font-face {
+      font-family: 'Whitney';
+      src: url('WhitneySSm-Bold-Bas.otf');
+      font-weight: 700;
+    }
+
+    :root {
+      --bg: #FAFAF8;
+      --text: #1a1a1a;
+      --text-muted: #6b6b63;
+      --text-light: #9b9b90;
+      --border: #e5e5e0;
+      --code-bg: #f0efe8;
+      --blue: #2563EB;
+      --blue-light: #dbeafe;
+      --blue-muted: #93b4f5;
+      --orange: #D97706;
+      --orange-light: #fef3c7;
+      --orange-muted: #f0b95a;
+      --green: #059669;
+      --green-light: #d1fae5;
+      --green-muted: #6dd8ad;
+      --red: #dc2626;
+      --red-light: #fee2e2;
+      --section-gap: 6rem;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      font-size: 18px;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Whitney", "Avenir Next", "Avenir", system-ui, sans-serif;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      padding: 0 1.5rem;
+    }
+
+    .container {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 3rem 0 6rem;
+    }
+
+    /* ---- Typography ---- */
+    h1,
+    h2,
+    h3 {
+      font-family: "Whitney", "Palatino Linotype", Palatino, Georgia, serif;
+      font-weight: normal;
+      letter-spacing: -0.01em;
+    }
+
+    h1 {
+      font-size: 2.6rem;
+      line-height: 1.15;
+      margin-bottom: 0.6rem;
+      color: var(--text);
+    }
+
+    h2 {
+      font-size: 1.7rem;
+      line-height: 1.25;
+      margin-bottom: 1.2rem;
+      color: var(--text);
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      line-height: 1.35;
+      margin-bottom: 0.6rem;
+      color: var(--text);
+      font-style: italic;
+    }
+
+    .subtitle {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+      font-family: "Whitney", "Palatino Linotype", Palatino, Georgia, serif;
+      font-style: italic;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      max-width: 680px;
+    }
+
+    code {
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 0.85em;
+      background: var(--code-bg);
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+    }
+
+    /* ---- Sections ---- */
+    section {
+      margin-bottom: var(--section-gap);
+      position: relative;
+    }
+
+    .section-num {
+      position: absolute;
+      top: 0;
+      left: -3.5rem;
+      font-family: "Palatino Linotype", Palatino, Georgia, serif;
+      font-size: 4rem;
+      color: var(--border);
+      font-weight: normal;
+      line-height: 1;
+      user-select: none;
+      pointer-events: none;
+    }
+
+    @media (max-width: 1000px) {
+      .section-num {
+        display: none;
+      }
+    }
+
+    /* ---- Lists ---- */
+    ul,
+    ol {
+      padding-left: 1.4rem;
+      margin-bottom: 1.2rem;
+      max-width: 720px;
+    }
+
+    li {
+      margin-bottom: 0.45rem;
+    }
+
+    li strong {
+      color: var(--text);
+    }
+
+    /* ---- Stats bar ---- */
+    .stats {
+      display: flex;
+      gap: 0;
+      margin: 2rem 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: white;
+    }
+
+    .stat {
+      flex: 1;
+      text-align: center;
+      padding: 1rem 0.5rem;
+      border-right: 1px solid var(--border);
+    }
+
+    .stat:last-child {
+      border-right: none;
+    }
+
+    .stat-value {
+      font-family: "SF Mono", monospace;
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--text);
+      display: block;
+    }
+
+    .stat-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 0.2rem;
+      display: block;
+    }
+
+    /* ---- Flow diagram (section 2) ---- */
+    .flow-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin: 2.5rem 0;
+    }
+
+    .flow-box {
+      padding: 1rem 1rem;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 0.82rem;
+      font-weight: 500;
+      line-height: 1.35;
+      min-width: 140px;
+    }
+
+    .flow-box.sol {
+      background: var(--green-light);
+      border: 2px solid var(--green);
+      color: #065f46;
+    }
+
+    .flow-box.server {
+      background: var(--blue-light);
+      border: 2px solid var(--blue);
+      color: #1e40af;
+    }
+
+    .flow-box.kindle {
+      background: var(--orange-light);
+      border: 2px solid var(--orange);
+      color: #92400e;
+    }
+
+    .flow-arrow {
+      font-size: 1.1rem;
+      color: var(--text-light);
+      padding: 0 0.4rem;
+      flex-shrink: 0;
+      font-family: "SF Mono", monospace;
+    }
+
+    /* ---- Callout ---- */
+    .callout {
+      border-left: 3px solid var(--border);
+      padding: 1rem 1.4rem;
+      margin: 1.5rem 0;
+      background: white;
+      border-radius: 0 6px 6px 0;
+    }
+
+    .callout.orange {
+      border-left-color: var(--orange);
+    }
+
+    .callout.blue {
+      border-left-color: var(--blue);
+    }
+
+    .callout.green {
+      border-left-color: var(--green);
+    }
+
+    .callout-title {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    /* ---- SVG container ---- */
+    .diagram-wrap {
+      margin: 2rem 0;
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+
+    .diagram-wrap svg {
+      display: block;
+      margin: 0 auto;
+      width: 100%;
+      height: auto;
+    }
+
+    .diagram-caption {
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 0.8rem;
+      font-style: italic;
+    }
+
+    /* ---- Problem/solution cards ---- */
+    .problem-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.2rem;
+      margin: 1.5rem 0;
+    }
+
+    .problem-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+      border-top: 3px solid var(--border);
+    }
+
+    .problem-card.detection {
+      border-top-color: var(--orange);
+    }
+
+    .problem-card.coordination {
+      border-top-color: var(--blue);
+    }
+
+    .problem-card.auth {
+      border-top-color: #8b5cf6;
+    }
+
+    .problem-card.scale {
+      border-top-color: var(--green);
+    }
+
+    .problem-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .problem-card.detection .problem-label {
+      color: var(--orange);
+    }
+
+    .problem-card.coordination .problem-label {
+      color: var(--blue);
+    }
+
+    .problem-card.auth .problem-label {
+      color: #8b5cf6;
+    }
+
+    .problem-card.scale .problem-label {
+      color: var(--green);
+    }
+
+    .problem-card h3 {
+      font-style: normal;
+      font-family: "Whitney", "Avenir Next", system-ui, sans-serif;
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .problem-card p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 0;
+      line-height: 1.5;
+    }
+
+    .problem-card code {
+      font-size: 0.78rem;
+    }
+
+    /* ---- Comparison table ---- */
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      font-size: 0.88rem;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .comparison-table th {
+      background: var(--code-bg);
+      text-align: left;
+      padding: 0.7rem 1rem;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .comparison-table td {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    .comparison-table td ul {
+      margin: 0;
+      padding-left: 1.1rem;
+    }
+
+    .comparison-table td li {
+      margin-bottom: 0.2rem;
+    }
+
+    .comparison-table td li:last-child {
+      margin-bottom: 0;
+    }
+
+    .comparison-table tr:last-child td {
+      border-bottom: none;
+    }
+
+
+    /* ---- Infra grid ---- */
+    .infra-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.2rem;
+      margin: 1.5rem 0;
+    }
+
+    @media (max-width: 700px) {
+      .infra-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .infra-item {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+    }
+
+    .infra-item h3 {
+      font-style: normal;
+      font-family: "Whitney", "Avenir Next", system-ui, sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .infra-item p,
+    .infra-item ul {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 0;
+    }
+
+    .infra-item ul {
+      padding-left: 1.1rem;
+    }
+
+    /* ---- Reflections ---- */
+    .reflection-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.2rem;
+      margin: 1.5rem 0;
+    }
+
+    @media (max-width: 700px) {
+      .reflection-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .reflection-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.2rem 1.4rem;
+    }
+
+    .reflection-card h3 {
+      font-style: normal;
+      font-family: "Whitney", "Avenir Next", system-ui, sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .reflection-card ul {
+      font-size: 0.85rem;
+      padding-left: 1.1rem;
+      margin-bottom: 0;
+    }
+
+    .reflection-card li {
+      margin-bottom: 0.35rem;
+      color: var(--text);
+    }
+
+    /* ---- Learnings list ---- */
+    .learnings {
+      list-style: none;
+      padding-left: 0;
+      max-width: 720px;
+    }
+
+    .learnings li {
+      padding: 0.8rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+
+    .learnings li:last-child {
+      border-bottom: none;
+    }
+
+    .learnings li strong {
+      display: block;
+      margin-bottom: 0.2rem;
+    }
+
+    .learnings li span {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    /* ---- Title section ---- */
+    .hero {
+      padding: 4rem 0 2rem;
+      margin-bottom: var(--section-gap);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+
+    .hero-meta {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+
+    .hero-tag {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      padding: 0.3em 0.8em;
+      border-radius: 4px;
+    }
+
+    .hero-tag.sol {
+      background: var(--green-light);
+      color: var(--green);
+    }
+
+    .hero-tag.solo {
+      background: var(--blue-light);
+      color: var(--blue);
+    }
+
+    /* ---- Footer ---- */
+    footer {
+      padding: 2rem 0;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      color: var(--text-light);
+      font-size: 0.78rem;
+    }
+
+    /* ---- Timing badge ---- */
+    .timing {
+      display: inline-block;
+      font-size: 0.65rem;
+      color: var(--text-light);
+      border: 1px solid var(--border);
+      padding: 0.15em 0.5em;
+      border-radius: 3px;
+      margin-left: 0.6rem;
+      vertical-align: middle;
+      font-family: "SF Mono", monospace;
+      letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <!-- ============================================ -->
+    <!-- SECTION 1: CONTEXT                            -->
+    <!-- ============================================ -->
+    <section class="hero">
+      <h1 style="position:relative;"><span class="section-num" style="top:0.15rem;">1</span>Kindle Automator</h1>
+
+      <ul>
+        <li><strong>Product:</strong> Sol Reader, wearable e-reader glasses for immersive reading</li>
+        <li><strong>Problem:</strong> 90%+ of ebook users are on Kindle. Amazon has no API.</li>
+        <li><strong>Bet:</strong> Instead of building a competing bookstore, automate Amazon's own Kindle app.</li>
+      </ul>
+
+      <div class="flow-row">
+        <div class="flow-box sol">
+          <strong>Sol Reader</strong><br>Glasses
+        </div>
+        <div class="flow-arrow">&larr;&rarr;</div>
+        <div class="flow-box sol" style="background:#e8f9f0;">
+          <strong>Web Server</strong><br>Cache + Auth
+        </div>
+        <div class="flow-arrow">&larr;&rarr;</div>
+        <div class="flow-box server">
+          <strong>Kindle Automator</strong><br>Server
+        </div>
+        <div class="flow-arrow">&larr;&rarr;</div>
+        <div class="flow-box kindle">
+          <strong>Android Emulator</strong><br>+ Kindle App
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-value">57K</span>
+          <span class="stat-label">Lines of Code</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">169</span>
+          <span class="stat-label">Python Files</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">1,424</span>
+          <span class="stat-label">Commits</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" style="font-size:1rem;">Jan&ndash;Oct &rsquo;25</span>
+          <span class="stat-label">Duration</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- SECTION 2: APPROACH & KEY TECHNICAL DECISIONS -->
+    <!-- ============================================ -->
+    <section>
+      <span class="section-num">2</span>
+      <h2>Approach &amp; Key Technical Decisions</h2>
+
+      <h3>Platform</h3>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Decision</th>
+            <th>Approach</th>
+            <th>Pros</th>
+            <th>Cons</th>
+            <th>Rejected Alternatives</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Kindle on emulated Android</strong></td>
+            <td>Run real Kindle app in Android emulator, control via Appium</td>
+            <td>Full catalog, Amazon handles DRM</td>
+            <td>~600MB RAM per user, latency between action and result</td>
+            <td>
+              <ul>
+                <li>Web scraping (limited catalog)</li>
+                <li>Reverse engineering (DRM/legal)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Infrastructure</strong></td>
+            <td>Bare metal x86, ARM64 Kindle APK translated via QEMU</td>
+            <td>KVM acceleration, predictable cost</td>
+            <td>QEMU translation overhead, no auto-scaling</td>
+            <td>
+              <ul>
+                <li>Cloud VMs (emulators too slow)</li>
+                <li>ARM64 emulator (Google dropped support after API 25, now on 36)</li>
+              </ul>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Kindle App Views</h3>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Decision</th>
+            <th>Approach</th>
+            <th>Pros</th>
+            <th>Cons</th>
+            <th>Rejected Alternatives</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Authentication</strong></td>
+            <td>User enters credentials via VNC</td>
+            <td>No credential storage</td>
+            <td>Requires VNC interaction</td>
+            <td>
+              <ul>
+                <li>Store username/password for auto re-login on token loss (security liability)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>2FA &amp; CAPTCHA</strong></td>
+            <td>
+              <ul>
+                <li>Image CAPTCHAs</li>
+                <li>Rotation puzzle</li>
+                <li>Drag puzzle</li>
+                <li>Phone 2FA</li>
+                <li>Email 2FA</li>
+              </ul>
+            </td>
+            <td>100% reliable</td>
+            <td>Janky VNC'd Android app on a user's iPhone</td>
+            <td>
+              <ul>
+                <li>Automated CAPTCHA (brittle, puzzle drag hard)</li>
+                <li>Skip/defer (terrible UX)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Fetching &amp; searching library</strong></td>
+            <td>Scroll library view, scrape metadata from XML</td>
+            <td>Cacheable covers, native book selection in mobile app</td>
+            <td>Minutes for hundreds of books, hour for thousands</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td><strong>Text extraction</strong></td>
+            <td>Mistral OCR primary, Google Doc AI fallback</td>
+            <td>No Kindle API, most reliable way to get text</td>
+            <td>Non-deterministic, adds latency and cost, munges formatting</td>
+            <td>
+              <ul>
+                <li>Tesseract (poor accuracy)</li>
+              </ul>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Core Architecture</h3>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Decision</th>
+            <th>Approach</th>
+            <th>Pros</th>
+            <th>Cons</th>
+            <th>Rejected Alternatives</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>View detection</strong></td>
+            <td>XML page source + XPath</td>
+            <td>~50ms, deterministic, debuggable</td>
+            <td>Brittle; mitigated with fallback chains</td>
+            <td>
+              <ul>
+                <li>Vision/ML (slow, needs training data)</li>
+                <li>OCR (5&ndash;6s, unreliable)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Navigation</strong></td>
+            <td>Finite state machine, 15 states</td>
+            <td>Predictable, new states isolated</td>
+            <td>Upfront modeling required</td>
+            <td>
+              <ul>
+                <li>Monolithic if/else (exponential)</li>
+                <li>Event-driven (hard to debug)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Multi-user</strong></td>
+            <td>One AVD per user, keyed by email</td>
+            <td>True isolation, concurrent, persistent auth</td>
+            <td>Disk + RAM per profile</td>
+            <td>
+              <ul>
+                <li>Shared emulator (slow switching)</li>
+                <li>Docker per user (I/O overhead)</li>
+              </ul>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Request coordination</strong></td>
+            <td>Redis priority queue + dedup</td>
+            <td>Higher priority cancels lower, shared results</td>
+            <td>More complex than mutex</td>
+            <td>
+              <ul>
+                <li>Mutex (blocks everything)</li>
+                <li>Celery (heavyweight)</li>
+              </ul>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- SECTION 3: THE HARDEST PARTS                  -->
+    <!-- ============================================ -->
+    <section>
+      <span class="section-num">3</span>
+      <h2>The Hardest Parts</h2>
+
+      <div class="problem-grid">
+        <div class="problem-card coordination">
+          <div class="problem-label">Hard Problem 1</div>
+          <h3>Navigating a Moving Target</h3>
+          <p>Amazon updates the Kindle app constantly &mdash; new dialogs, changed layouts, different auth flows. Every
+            update is a mini-crisis. <strong>Solution:</strong> the state machine was designed for change. Each view has
+            multiple fallback XPath strategies. 50+ dialogs intercepted. Unknown states dump XML + screenshot for
+            forensic diagnosis, and fixes take minutes because the view detection layer is isolated from the action
+            logic.</p>
+        </div>
+
+        <div class="problem-card coordination">
+          <div class="problem-label">Hard Problem 2</div>
+          <h3>Concurrent Request Coordination</h3>
+          <p>Glasses poll screenshots every few seconds while the web app opens a book or navigates. One emulator, many
+            callers. <strong>Solution:</strong> Redis priority queue with cancellation propagation.
+            <code>shutdown=200</code> &gt; <code>open-book=100</code> &gt; <code>navigate=50</code> &gt;
+            <code>screenshot=0</code>. Higher priority cancels lower mid-execution. Identical requests deduplicate and
+            share results. "Last-one-wins" for book opens.
+          </p>
+        </div>
+
+        <div class="problem-card auth">
+          <div class="problem-label">Hard Problem 3</div>
+          <h3>Human-in-the-Loop Authentication</h3>
+          <p>Not just initial login &mdash; the full auth lifecycle. Amazon rotates 5 different challenge types (image
+            CAPTCHA, rotation puzzle, drag puzzle, phone 2FA, email 2FA), revokes tokens unpredictably, and changes auth
+            flows between app versions. <strong>Solution:</strong> VNC streaming infrastructure (WebSocket proxy,
+            rfbproxy) lets users solve challenges on their phone. The state machine waits in an auth state, detects
+            completion, and resumes the interrupted operation.</p>
+        </div>
+
+        <div class="problem-card detection">
+          <div class="problem-label">Hard Problem 4</div>
+          <h3>Making Emulators Work Headlessly at All</h3>
+          <p>365 of 1,424 commits are emulator-related. The Kindle app is ARM64; Google dropped ARM emulator support
+            after API 25 (we need 36). So: x86 emulators with QEMU binary translation of the ARM APK. Headless on bare
+            metal means no GPU &mdash; software rendering, Xvfb virtual displays, VNC servers per instance. Appium
+            crashes, ADB disconnects, emulators hang on boot, snapshots corrupt between graphics pipeline versions.
+            Each of these was a multi-day investigation. There's no documentation for running Kindle in a headless
+            x86 emulator with ARM translation &mdash; this configuration basically doesn't exist outside this project.</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top: 2.5rem; color: var(--text-muted);">Tractable Problems</h3>
+      <div class="infra-grid">
+        <div class="infra-item">
+          <h3>Amazon Detection</h3>
+          <p>Amazon ejects auth tokens from shared device fingerprints. Randomize MAC, serial, Android ID, IMEI per
+            emulator. Fingerprints persist across restarts.</p>
+        </div>
+
+        <div class="infra-item">
+          <h3>Scale &amp; Resources</h3>
+          <p>~600MB RAM per emulator. Idle shutdown for inactive users, cold storage archival to S3 after 30 days,
+            snapshot recovery for &lt;30s restart, seed clone AVDs for new users.</p>
+        </div>
+
+        <div class="infra-item">
+          <h3>Zero-Downtime Deploys</h3>
+          <p>Mark running emulators before deploy, pull code, restart server, auto-restore from snapshots. Active users
+            never interrupted.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================================ -->
+    <!-- SECTION 4: OUTCOME & IMPACT                   -->
+    <!-- ============================================ -->
+    <section>
+      <span class="section-num">4</span>
+      <h2>Outcome &amp; Impact</h2>
+
+      <div class="infra-grid">
+        <div class="infra-item">
+          <h3>Shipped the pivot</h3>
+          <p>Went from "competing with Kindle" to "enhancing Kindle." Unlocked users' existing libraries on hardware
+            Amazon never intended to support.</p>
+        </div>
+
+        <div class="infra-item">
+          <h3>Sold 1,000 devices</h3>
+          <p>Entire hardware inventory sold in 2&ndash;3 weeks after launching Kindle support. Viral TikTok videos
+            showcasing the feature drove organic demand.</p>
+        </div>
+
+        <div class="infra-item">
+          <h3>964 users on the platform</h3>
+          <p>Real adoption &mdash; users authenticated their Amazon accounts, loaded libraries, and read on the
+            glasses daily.</p>
+        </div>
+
+        <div class="infra-item">
+          <h3>Solo-built, production-hardened</h3>
+          <p>1 engineer, 13 months, 57K lines. Running on 2 bare metal servers serving concurrent users with
+            zero-downtime deploys.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ -->
+    <!-- SECTION 5: REFLECTIONS                        -->
+    <!-- ============================================ -->
+    <section>
+      <span class="section-num">5</span>
+      <h2>Reflections</h2>
+
+      <ul class="learnings">
+        <li>
+          <strong>Betting on the real app paid off</strong>
+          <span>Running actual Kindle (not scraping, not reverse engineering) meant we inherited Amazon's catalog, DRM,
+            and sync for free. Every new Kindle feature just works.</span>
+        </li>
+        <li>
+          <strong>Partial automation beats flaky full automation</strong>
+          <span>VNC for 2FA/CAPTCHA felt like a compromise. It was actually the right call &mdash; 100% reliable human
+            auth beats 95% reliable automated auth that fails on a new user's first experience.</span>
+        </li>
+        <li>
+          <strong>XPath brittleness is manageable</strong>
+          <span>50ms deterministic detection vs 5&ndash;6s non-deterministic OCR. Kindle app updates break XPaths, but
+            fallback chains + forensic XML dumps on failure mean fixes take minutes, not days.</span>
+        </li>
+        <li>
+          <strong>The state machine was the best architectural decision</strong>
+          <span>When Amazon added puzzle auth, it was one new handler file. Without the FSM, it would have been changes
+            across every flow.</span>
+        </li>
+      </ul>
+
+      <div class="reflection-grid">
+        <div class="reflection-card">
+          <h3>If 3 more months...</h3>
+          <ul>
+            <li>Vision/ML as fallback when all XPath strategies fail on unknown views</li>
+            <li>Abstract away the emulator behind an API proxy &mdash; clients shouldn't know it's UI automation</li>
+            <li>Automated library indexing instead of scroll-scraping (minutes for hundreds of books is too slow)</li>
+          </ul>
+        </div>
+        <div class="reflection-card">
+          <h3>If 2 months sooner...</h3>
+          <ul>
+            <li>Redis request coordination from day one (started single-user, caused significant rework)</li>
+            <li>List-only library view (skip grid view support &mdash; simpler scraping)</li>
+            <li>Fewer initial states &mdash; start with LIBRARY, READING, AUTH, add others as encountered</li>
+          </ul>
+        </div>
+        <div class="reflection-card">
+          <h3>Hardest decision</h3>
+          <ul>
+            <li>Emulating Android over building a bookstore &mdash; felt hacky, was right. Users don't care how it works,
+              they care that their library works.</li>
+            <li>VNC for auth instead of automating it &mdash; accepting partial automation as a feature, not a
+              limitation.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Samuel Clay &bull; Sol Reader &bull; 2025&ndash;2026<br>
+      57,000 lines of Python &middot; 169 files &middot; 1,424 commits &middot; 1 engineer &middot; 13 months
+    </footer>
+
+  </div>
+</body>
+
+</html>
