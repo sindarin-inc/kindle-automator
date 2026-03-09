@@ -317,79 +317,41 @@
       font-style: italic;
     }
 
-    /* ---- Problem/solution cards ---- */
-    .problem-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 1.2rem;
-      margin: 1.5rem 0;
+    /* ---- Hard problems (visual) ---- */
+    .hard-problem {
+      margin-bottom: 2.5rem;
     }
 
-    .problem-card {
-      background: white;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1.2rem 1.4rem;
-      border-top: 3px solid var(--border);
+    .hard-problem-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.8rem;
+      margin-bottom: 0.8rem;
     }
 
-    .problem-card.detection {
-      border-top-color: var(--orange);
-    }
-
-    .problem-card.coordination {
-      border-top-color: var(--blue);
-    }
-
-    .problem-card.auth {
-      border-top-color: #8b5cf6;
-    }
-
-    .problem-card.scale {
-      border-top-color: var(--green);
-    }
-
-    .problem-label {
-      font-size: 0.72rem;
+    .hard-problem-num {
+      font-size: 0.68rem;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-weight: 600;
-      margin-bottom: 0.4rem;
+      white-space: nowrap;
     }
 
-    .problem-card.detection .problem-label {
-      color: var(--orange);
-    }
-
-    .problem-card.coordination .problem-label {
-      color: var(--blue);
-    }
-
-    .problem-card.auth .problem-label {
-      color: #8b5cf6;
-    }
-
-    .problem-card.scale .problem-label {
-      color: var(--green);
-    }
-
-    .problem-card h3 {
-      font-style: normal;
+    .hard-problem-header h3 {
       font-family: "Whitney", "Avenir Next", system-ui, sans-serif;
-      font-size: 1rem;
+      font-style: normal;
+      font-size: 1.05rem;
       font-weight: 600;
-      margin-bottom: 0.5rem;
+      margin: 0;
     }
 
-    .problem-card p {
-      font-size: 0.88rem;
-      color: var(--text-muted);
-      margin-bottom: 0;
-      line-height: 1.5;
+    .hard-problem svg {
+      width: 100%;
+      display: block;
     }
 
-    .problem-card code {
-      font-size: 0.78rem;
+    .hard-problem svg text {
+      font-family: "Whitney", "Avenir Next", system-ui, sans-serif;
     }
 
     /* ---- Comparison table ---- */
@@ -686,20 +648,21 @@
             <td>~600MB RAM per user, latency between action and result</td>
             <td>
               <ul>
-                <li>Web scraping (limited catalog)</li>
+                <li>Web scraping (obfuscated DOM, unreliable element targeting)</li>
                 <li>Reverse engineering (DRM/legal)</li>
               </ul>
             </td>
           </tr>
           <tr>
             <td><strong>Infrastructure</strong></td>
-            <td>Bare metal x86, ARM64 Kindle APK translated via QEMU</td>
+            <td>Bare metal x86 emulator (QEMU + KVM), ARM64 Kindle APK translated via libhoudini native bridge</td>
             <td>KVM acceleration, predictable cost</td>
-            <td>QEMU translation overhead, no auto-scaling</td>
+            <td>~30% native bridge translation overhead, no auto-scaling</td>
             <td>
               <ul>
-                <li>Cloud VMs (emulators too slow)</li>
+                <li>Cloud VMs (nested virtualization too slow or unavailable)</li>
                 <li>ARM64 emulator (Google dropped support after API 25, now on 36)</li>
+                <li>Mac (native ARM emulator works, but no Xvfb &mdash; can't isolate per-user VNC displays)</li>
               </ul>
             </td>
           </tr>
@@ -731,7 +694,7 @@
           </tr>
           <tr>
             <td><strong>2FA &amp; CAPTCHA</strong></td>
-            <td>
+            <td>All solved by the user via VNC:
               <ul>
                 <li>Image CAPTCHAs</li>
                 <li>Rotation puzzle</li>
@@ -751,14 +714,15 @@
           </tr>
           <tr>
             <td><strong>Fetching &amp; searching library</strong></td>
-            <td>Scroll library view, scrape metadata from XML</td>
+            <td>Scroll library view, scrape metadata from XML, streamed via SSE to be cached by web server</td>
             <td>Cacheable covers, native book selection in mobile app</td>
             <td>Minutes for hundreds of books, hour for thousands</td>
             <td></td>
           </tr>
           <tr>
             <td><strong>Text extraction</strong></td>
-            <td>Mistral OCR primary, Google Doc AI fallback</td>
+            <td>Mistral OCR primary, Google Doc AI fallback. Firmware switch from relative to absolute paging
+              enabled pre-fetching pages ahead &mdash; users never see a loading indicator on the device</td>
             <td>No Kindle API, most reliable way to get text</td>
             <td>Non-deterministic, adds latency and cost, munges formatting</td>
             <td>
@@ -796,19 +760,18 @@
           </tr>
           <tr>
             <td><strong>Navigation</strong></td>
-            <td>Finite state machine, 15 states</td>
+            <td>Finite state machine, 15 states. Fast expected-view check, then slow detection by likelihood, then app restart as last resort</td>
             <td>Predictable, new states isolated</td>
             <td>Upfront modeling required</td>
             <td>
               <ul>
-                <li>Monolithic if/else (exponential)</li>
-                <li>Event-driven (hard to debug)</li>
+                <li>Monolithic if/else (exponential complexity)</li>
               </ul>
             </td>
           </tr>
           <tr>
             <td><strong>Multi-user</strong></td>
-            <td>One AVD per user, keyed by email</td>
+            <td>One AVD per user, keyed by email. New users cloned from a seed AVD for fast init, then device fingerprints randomized (MAC, serial, Android ID) so each clone looks unique</td>
             <td>True isolation, concurrent, persistent auth</td>
             <td>Disk + RAM per profile</td>
             <td>
@@ -820,13 +783,14 @@
           </tr>
           <tr>
             <td><strong>Request coordination</strong></td>
-            <td>Redis priority queue + dedup</td>
+            <td>Redis priority queue + dedup. Some requests cancellable (open-book), some not (navigate
+              mid-tap &mdash; can't undo a tap on a physical UI)</td>
             <td>Higher priority cancels lower, shared results</td>
             <td>More complex than mutex</td>
             <td>
               <ul>
-                <li>Mutex (blocks everything)</li>
-                <li>Celery (heavyweight)</li>
+                <li>Naive last-one-wins (non-cancellable requests kept running, caused conflicts)</li>
+                <li>Simple mutex (blocks all concurrent requests)</li>
               </ul>
             </td>
           </tr>
@@ -841,48 +805,176 @@
       <span class="section-num">3</span>
       <h2>The Hardest Parts</h2>
 
-      <div class="problem-grid">
-        <div class="problem-card coordination">
-          <div class="problem-label">Hard Problem 1</div>
+      <!-- Hard Problem 1: Moving Target -->
+      <div class="hard-problem">
+        <div class="hard-problem-header">
+          <span class="hard-problem-num" style="color: var(--blue);">Hard Problem 1</span>
           <h3>Navigating a Moving Target</h3>
-          <p>Amazon updates the Kindle app constantly &mdash; new dialogs, changed layouts, different auth flows. Every
-            update is a mini-crisis. <strong>Solution:</strong> the state machine was designed for change. Each view has
-            multiple fallback XPath strategies. 50+ dialogs intercepted. Unknown states dump XML + screenshot for
-            forensic diagnosis, and fixes take minutes because the view detection layer is isolated from the action
-            logic.</p>
         </div>
+        <svg viewBox="0 0 720 65" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrow-gray" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#999" stroke-width="1"/></marker>
+            <marker id="arrow-blue" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#2563EB" stroke-width="1"/></marker>
+          </defs>
+          <rect x="0" y="14" width="105" height="36" rx="5" fill="#FEF3C7" stroke="#D97706" stroke-width="1.2"/>
+          <text x="52" y="36" text-anchor="middle" font-size="10" font-weight="600" fill="#92400E">Kindle Update</text>
+          <path d="M110,32 L130,32" stroke="#999" stroke-width="1.2" marker-end="url(#arrow-gray)"/>
+          <rect x="135" y="14" width="100" height="36" rx="5" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.2"/>
+          <text x="185" y="30" text-anchor="middle" font-size="9" font-weight="600" fill="#1D4ED8">Fast check</text>
+          <text x="185" y="42" text-anchor="middle" font-size="8" fill="#3B82F6">expected view</text>
+          <path d="M240,32 L260,32" stroke="#2563EB" stroke-width="1" marker-end="url(#arrow-blue)"/>
+          <rect x="265" y="14" width="100" height="36" rx="5" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.2"/>
+          <text x="315" y="30" text-anchor="middle" font-size="9" font-weight="600" fill="#1D4ED8">Slow check</text>
+          <text x="315" y="42" text-anchor="middle" font-size="8" fill="#3B82F6">by likelihood</text>
+          <path d="M370,32 L390,32" stroke="#2563EB" stroke-width="1" marker-end="url(#arrow-blue)"/>
+          <rect x="395" y="14" width="100" height="36" rx="5" fill="#FEF2F2" stroke="#DC2626" stroke-width="1.2"/>
+          <text x="445" y="30" text-anchor="middle" font-size="9" font-weight="600" fill="#991B1B">Unknown?</text>
+          <text x="445" y="42" text-anchor="middle" font-size="8" fill="#B91C1C">dump XML, restart</text>
+          <path d="M500,32 L520,32" stroke="#999" stroke-width="1.2" marker-end="url(#arrow-gray)"/>
+          <rect x="525" y="14" width="95" height="36" rx="5" fill="#ECFDF5" stroke="#059669" stroke-width="1.2"/>
+          <text x="572" y="30" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Fix</text>
+          <text x="572" y="42" text-anchor="middle" font-size="8" fill="#047857">update XPaths</text>
+          <text x="360" y="62" text-anchor="middle" font-size="8" fill="#6B7280" font-style="italic">50+ dialogs handled &middot; detection isolated from action logic</text>
+        </svg>
+      </div>
 
-        <div class="problem-card coordination">
-          <div class="problem-label">Hard Problem 2</div>
+      <!-- Hard Problem 2: Request Coordination -->
+      <div class="hard-problem">
+        <div class="hard-problem-header">
+          <span class="hard-problem-num" style="color: var(--blue);">Hard Problem 2</span>
           <h3>Concurrent Request Coordination</h3>
-          <p>Glasses poll screenshots every few seconds while the web app opens a book or navigates. One emulator, many
-            callers. <strong>Solution:</strong> Redis priority queue with cancellation propagation.
-            <code>shutdown=200</code> &gt; <code>open-book=100</code> &gt; <code>navigate=50</code> &gt;
-            <code>screenshot=0</code>. Higher priority cancels lower mid-execution. Identical requests deduplicate and
-            share results. "Last-one-wins" for book opens.
-          </p>
         </div>
+        <svg viewBox="0 0 720 130" xmlns="http://www.w3.org/2000/svg">
+          <!-- Time axis -->
+          <line x1="90" y1="120" x2="700" y2="120" stroke="#ccc" stroke-width="1"/>
+          <text x="395" y="130" text-anchor="middle" font-size="8" fill="#9CA3AF">time &rarr;</text>
+          <!-- Row labels -->
+          <text x="80" y="30" text-anchor="end" font-size="9" font-weight="600" fill="#1D4ED8">/navigate</text>
+          <text x="80" y="62" text-anchor="end" font-size="9" font-weight="600" fill="#92400E">/open-book</text>
+          <text x="80" y="94" text-anchor="end" font-size="9" font-weight="600" fill="#991B1B">/shutdown</text>
+          <!-- Navigate bar: starts at beginning, runs partway, then gets cancelled -->
+          <rect x="90" y="18" width="250" height="20" rx="4" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.2"/>
+          <text x="215" y="32" text-anchor="middle" font-size="8" fill="#1D4ED8">navigating pages...</text>
+          <!-- Cancelled marker on navigate -->
+          <line x1="340" y1="14" x2="340" y2="42" stroke="#D97706" stroke-width="1.5" stroke-dasharray="3,2"/>
+          <text x="345" y="13" font-size="7" fill="#D97706" font-weight="600">cancelled</text>
+          <!-- Open-book bar: starts mid-way through navigate -->
+          <rect x="340" y="50" width="210" height="20" rx="4" fill="#FEF3C7" stroke="#D97706" stroke-width="1.2"/>
+          <text x="445" y="64" text-anchor="middle" font-size="8" fill="#92400E">opening book... (priority 100)</text>
+          <!-- Cancelled marker on open-book -->
+          <line x1="550" y1="46" x2="550" y2="74" stroke="#DC2626" stroke-width="1.5" stroke-dasharray="3,2"/>
+          <text x="555" y="45" font-size="7" fill="#DC2626" font-weight="600">cancelled</text>
+          <!-- Shutdown bar: starts mid-way through open-book -->
+          <rect x="550" y="82" width="140" height="20" rx="4" fill="#FEF2F2" stroke="#DC2626" stroke-width="1.2"/>
+          <text x="620" y="96" text-anchor="middle" font-size="8" fill="#991B1B">/shutdown (priority 200)</text>
+          <!-- Vertical event lines -->
+          <line x1="340" y1="38" x2="340" y2="50" stroke="#D97706" stroke-width="1" stroke-dasharray="2,2"/>
+          <line x1="550" y1="70" x2="550" y2="82" stroke="#DC2626" stroke-width="1" stroke-dasharray="2,2"/>
+        </svg>
+      </div>
 
-        <div class="problem-card auth">
-          <div class="problem-label">Hard Problem 3</div>
+      <!-- Hard Problem 3: Human-in-the-Loop Auth -->
+      <div class="hard-problem">
+        <div class="hard-problem-header">
+          <span class="hard-problem-num" style="color: #8b5cf6;">Hard Problem 3</span>
           <h3>Human-in-the-Loop Authentication</h3>
-          <p>Not just initial login &mdash; the full auth lifecycle. Amazon rotates 5 different challenge types (image
-            CAPTCHA, rotation puzzle, drag puzzle, phone 2FA, email 2FA), revokes tokens unpredictably, and changes auth
-            flows between app versions. <strong>Solution:</strong> VNC streaming infrastructure (WebSocket proxy,
-            rfbproxy) lets users solve challenges on their phone. The state machine waits in an auth state, detects
-            completion, and resumes the interrupted operation.</p>
         </div>
+        <svg viewBox="0 0 820 100" xmlns="http://www.w3.org/2000/svg">
+          <!-- Step 1: Running -->
+          <rect x="0" y="22" width="110" height="50" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+          <text x="55" y="43" text-anchor="middle" font-size="10" font-weight="600" fill="#1D4ED8">State Machine</text>
+          <text x="55" y="56" text-anchor="middle" font-size="9" fill="#3B82F6">running</text>
+          <!-- Arrow -->
+          <path d="M115,47 L138,47" stroke="#999" stroke-width="1.2" marker-end="url(#arrow-gray)"/>
+          <!-- Step 2: Challenge detected -->
+          <rect x="143" y="22" width="120" height="50" rx="6" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+          <text x="203" y="40" text-anchor="middle" font-size="10" font-weight="600" fill="#92400E">Auth Challenge</text>
+          <text x="203" y="53" text-anchor="middle" font-size="8" fill="#A16207">CAPTCHA / 2FA /</text>
+          <text x="203" y="63" text-anchor="middle" font-size="8" fill="#A16207">puzzle / rotate</text>
+          <!-- Arrow -->
+          <path d="M268,47 L291,47" stroke="#999" stroke-width="1.2" marker-end="url(#arrow-gray)"/>
+          <!-- Step 3: Pause & stream VNC -->
+          <rect x="296" y="22" width="120" height="50" rx="6" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="1.5"/>
+          <text x="356" y="40" text-anchor="middle" font-size="10" font-weight="600" fill="#6D28D9">Pause &amp; Stream</text>
+          <text x="356" y="53" text-anchor="middle" font-size="9" fill="#7C3AED">VNC to user's</text>
+          <text x="356" y="63" text-anchor="middle" font-size="9" fill="#7C3AED">phone</text>
+          <!-- Arrow -->
+          <path d="M421,47 L444,47" stroke="#999" stroke-width="1.2" marker-end="url(#arrow-gray)"/>
+          <!-- Step 4: User solves -->
+          <rect x="449" y="22" width="110" height="50" rx="6" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+          <text x="504" y="43" text-anchor="middle" font-size="10" font-weight="600" fill="#92400E">User Solves</text>
+          <text x="504" y="56" text-anchor="middle" font-size="9" fill="#A16207">on their phone</text>
+          <!-- Arrow -->
+          <path d="M564,47 L587,47" stroke="#999" stroke-width="1.2" marker-end="url(#arrow-gray)"/>
+          <!-- Step 5: Detect completion -->
+          <rect x="592" y="22" width="110" height="50" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+          <text x="647" y="40" text-anchor="middle" font-size="10" font-weight="600" fill="#1D4ED8">Detect</text>
+          <text x="647" y="53" text-anchor="middle" font-size="9" fill="#3B82F6">view changed</text>
+          <!-- Arrow -->
+          <path d="M707,47 L730,47" stroke="#999" stroke-width="1.2" marker-end="url(#arrow-gray)"/>
+          <!-- Step 6: Resume -->
+          <rect x="735" y="22" width="85" height="50" rx="6" fill="#ECFDF5" stroke="#059669" stroke-width="1.5"/>
+          <text x="777" y="43" text-anchor="middle" font-size="10" font-weight="600" fill="#065F46">Resume</text>
+          <text x="777" y="56" text-anchor="middle" font-size="9" fill="#047857">operation</text>
+          <!-- Label -->
+          <text x="410" y="92" text-anchor="middle" font-size="8.5" fill="#6B7280" font-style="italic">Amazon rotates 5 challenge types across app versions &mdash; tokens revoked unpredictably</text>
+        </svg>
+      </div>
 
-        <div class="problem-card detection">
-          <div class="problem-label">Hard Problem 4</div>
-          <h3>Making Emulators Work Headlessly at All</h3>
-          <p>365 of 1,424 commits are emulator-related. The Kindle app is ARM64; Google dropped ARM emulator support
-            after API 25 (we need 36). So: x86 emulators with QEMU binary translation of the ARM APK. Headless on bare
-            metal means no GPU &mdash; software rendering, Xvfb virtual displays, VNC servers per instance. Appium
-            crashes, ADB disconnects, emulators hang on boot, snapshots corrupt between graphics pipeline versions.
-            Each of these was a multi-day investigation. There's no documentation for running Kindle in a headless
-            x86 emulator with ARM translation &mdash; this configuration basically doesn't exist outside this project.</p>
+      <!-- Hard Problem 4: Headless Emulators -->
+      <div class="hard-problem">
+        <div class="hard-problem-header">
+          <span class="hard-problem-num" style="color: var(--orange);">Hard Problem 4</span>
+          <h3>Making Emulators Work Headlessly</h3>
         </div>
+        <svg viewBox="0 0 820 135" xmlns="http://www.w3.org/2000/svg">
+          <!-- Left: Layer stack -->
+          <text x="220" y="14" text-anchor="middle" font-size="9" fill="#6B7280" font-weight="600">EMULATOR STACK (one per user, hundreds per box)</text>
+          <!-- Layer 1: Bare metal -->
+          <rect x="50" y="100" width="340" height="28" rx="4" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1"/>
+          <text x="220" y="118" text-anchor="middle" font-size="10" font-weight="600" fill="#4B5563">Bare Metal Linux</text>
+          <!-- Layer 2: KVM -->
+          <rect x="50" y="70" width="340" height="28" rx="4" fill="#EFF6FF" stroke="#2563EB" stroke-width="1"/>
+          <text x="220" y="88" text-anchor="middle" font-size="10" font-weight="600" fill="#1D4ED8">QEMU + KVM</text>
+          <!-- Multiple x86 Android instances -->
+          <rect x="58" y="40" width="100" height="28" rx="4" fill="#ECFDF5" stroke="#059669" stroke-width="1"/>
+          <text x="108" y="58" text-anchor="middle" font-size="8.5" font-weight="600" fill="#065F46">x86 Android</text>
+          <rect x="168" y="40" width="100" height="28" rx="4" fill="#ECFDF5" stroke="#059669" stroke-width="1"/>
+          <text x="218" y="58" text-anchor="middle" font-size="8.5" font-weight="600" fill="#065F46">x86 Android</text>
+          <rect x="278" y="40" width="100" height="28" rx="4" fill="#ECFDF5" stroke="#059669" stroke-width="1" stroke-dasharray="4,2"/>
+          <text x="328" y="58" text-anchor="middle" font-size="8.5" font-weight="600" fill="#065F46">x86 Android</text>
+          <text x="340" y="54" text-anchor="start" font-size="9" fill="#6B7280">...</text>
+          <!-- libhoudini + Kindle on first instance -->
+          <rect x="62" y="24" width="60" height="17" rx="3" fill="#FEF3C7" stroke="#D97706" stroke-width="1"/>
+          <text x="92" y="36" text-anchor="middle" font-size="7" font-weight="600" fill="#92400E">libhoudini</text>
+          <rect x="127" y="24" width="27" height="17" rx="3" fill="#FEF2F2" stroke="#DC2626" stroke-width="1"/>
+          <text x="140" y="35" text-anchor="middle" font-size="6" font-weight="600" fill="#991B1B">APK</text>
+          <!-- libhoudini + Kindle on second instance -->
+          <rect x="172" y="24" width="60" height="17" rx="3" fill="#FEF3C7" stroke="#D97706" stroke-width="1"/>
+          <text x="202" y="36" text-anchor="middle" font-size="7" font-weight="600" fill="#92400E">libhoudini</text>
+          <rect x="237" y="24" width="27" height="17" rx="3" fill="#FEF2F2" stroke="#DC2626" stroke-width="1"/>
+          <text x="250" y="35" text-anchor="middle" font-size="6" font-weight="600" fill="#991B1B">APK</text>
+          <!-- Right side: Display pipeline -->
+          <text x="600" y="14" text-anchor="middle" font-size="9" fill="#6B7280" font-weight="600">DISPLAY PIPELINE</text>
+          <!-- Xvfb -->
+          <rect x="470" y="40" width="90" height="36" rx="5" fill="#F3F4F6" stroke="#9CA3AF" stroke-width="1.2"/>
+          <text x="515" y="56" text-anchor="middle" font-size="9" font-weight="600" fill="#4B5563">Xvfb</text>
+          <text x="515" y="67" text-anchor="middle" font-size="7.5" fill="#6B7280">virtual framebuffer</text>
+          <path d="M565,58 L585,58" stroke="#999" stroke-width="1" marker-end="url(#arrow-gray)"/>
+          <!-- VNC -->
+          <rect x="590" y="40" width="80" height="36" rx="5" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.2"/>
+          <text x="630" y="56" text-anchor="middle" font-size="9" font-weight="600" fill="#1D4ED8">TigerVNC</text>
+          <text x="630" y="67" text-anchor="middle" font-size="7.5" fill="#3B82F6">per-user display</text>
+          <path d="M675,58 L695,58" stroke="#999" stroke-width="1" marker-end="url(#arrow-gray)"/>
+          <!-- WebSocket -->
+          <rect x="700" y="40" width="100" height="36" rx="5" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="1.2"/>
+          <text x="750" y="56" text-anchor="middle" font-size="9" font-weight="600" fill="#6D28D9">WebSocket</text>
+          <text x="750" y="67" text-anchor="middle" font-size="7.5" fill="#7C3AED">rfbproxy</text>
+          <!-- Arrow marker -->
+          <defs>
+            <marker id="arrow-orange" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6" fill="none" stroke="#D97706" stroke-width="1"/></marker>
+          </defs>
+        </svg>
       </div>
 
       <h3 style="margin-top: 2.5rem; color: var(--text-muted);">Tractable Problems</h3>
@@ -903,6 +995,12 @@
           <h3>Zero-Downtime Deploys</h3>
           <p>Mark running emulators before deploy, pull code, restart server, auto-restore from snapshots. Active users
             never interrupted.</p>
+        </div>
+
+        <div class="infra-item">
+          <h3>BLE + WiFi Connectivity</h3>
+          <p>Glasses connect to phone via BLE, phone proxies to server over WiFi. Fallback to direct WiFi when BLE
+            unavailable (hotels, captive portals). Users always reach their Kindle.</p>
         </div>
       </div>
 
@@ -977,16 +1075,19 @@
           <h3>If 3 more months...</h3>
           <ul>
             <li>Vision/ML as fallback when all XPath strategies fail on unknown views</li>
-            <li>Abstract away the emulator behind an API proxy &mdash; clients shouldn't know it's UI automation</li>
-            <li>Automated library indexing instead of scroll-scraping (minutes for hundreds of books is too slow)</li>
+            <li>Get ARM emulators working &mdash; eliminate the 30% libhoudini translation overhead entirely</li>
+            <li>Smarter page pre-caching &mdash; OCR page-by-page instead of batch-jumping forward, and sync the
+              placemark back if the client disconnects so Kindle stays where the user was actually reading</li>
           </ul>
         </div>
         <div class="reflection-card">
           <h3>If 2 months sooner...</h3>
           <ul>
             <li>Redis request coordination from day one (started single-user, caused significant rework)</li>
-            <li>List-only library view (skip grid view support &mdash; simpler scraping)</li>
-            <li>Fewer initial states &mdash; start with LIBRARY, READING, AUTH, add others as encountered</li>
+            <li>Skip automated auth/CAPTCHA attempts &mdash; go straight to VNC from the start instead of
+              building and then discarding automation for each challenge type</li>
+            <li>Skip snapshot management &mdash; just cold boot every time. Slower startup but avoids the
+              snapshot corruption rabbit holes that consumed weeks</li>
           </ul>
         </div>
         <div class="reflection-card">
@@ -1002,8 +1103,7 @@
     </section>
 
     <footer>
-      Samuel Clay &bull; Sol Reader &bull; 2025&ndash;2026<br>
-      57,000 lines of Python &middot; 169 files &middot; 1,424 commits &middot; 1 engineer &middot; 13 months
+      Samuel Clay &bull; Sol Reader &bull; 2025
     </footer>
 
   </div>
