@@ -2,9 +2,18 @@ from appium.webdriver.common.appiumby import AppiumBy
 
 # View identification strategies
 EMAIL_VIEW_IDENTIFIERS = [
+    (AppiumBy.ID, "ap_email_login"),
+    (
+        AppiumBy.XPATH,
+        "//android.webkit.WebView[@text='Amazon Sign-In']//android.widget.EditText[@hint='Enter mobile number or email']",
+    ),
     (
         AppiumBy.XPATH,
         "//android.webkit.WebView[@text='Amazon Sign-In']//android.widget.EditText[@hint='Email or phone number']",
+    ),
+    (
+        AppiumBy.XPATH,
+        "//android.webkit.WebView[@text='Amazon Sign-In']//android.view.View[@resource-id='ap_login_form']",
     ),
 ]
 
