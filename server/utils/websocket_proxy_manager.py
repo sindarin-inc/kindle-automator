@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 _instance = None
 
 # Base port for WebSocket connections (offset from VNC port)
-WS_PORT_OFFSET = 1000  # e.g., VNC on 5901 -> WebSocket on 6901
+WS_PORT_OFFSET = 2000  # e.g., VNC on 5901 -> WebSocket on 7901 (nginx does SSL on 6901 -> proxy to 7901)
 
 
 class WebSocketProxyManager:
