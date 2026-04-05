@@ -65,7 +65,7 @@ class DashboardResource(Resource):
                     server_hostname_map = {
                         "kindle-automator-1": "kindle1.sindarin.com",
                         "kindle-automator-3": "kindle3.sindarin.com",
-                        "kindle-automator-staging": "kindle-staging.sindarin.com",
+                        "sol-reader": "kindle-staging.sindarin.com",
                     }
 
                     # Determine the VNC host - use mapped hostname if available, otherwise use server name

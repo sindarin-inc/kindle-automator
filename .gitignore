@@ -169,6 +169,7 @@ user_data/users_index.json
 # Ansible
 .ansible
 ansible/keys/*
+ansible/inventory.ini
 ansible/roles/android_x86/files/*
 ansible/roles/android_arm/files/*
 ansible/roles/waydroid/files/*

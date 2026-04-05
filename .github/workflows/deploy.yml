@@ -52,4 +52,4 @@ jobs:
           ansible-playbook ansible/deploy.yml \
             -i ansible/inventory.ini \
             --private-key ~/.ssh/deploy_key \
-            --limit kindle-automator-staging
+            --limit sol-reader
