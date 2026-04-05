@@ -426,15 +426,6 @@ class AVDProfileManager:
             user = repo.get_user_by_emulator_id(emulator_id)
             return user.email if user else None
 
-    def get_inactive_profiles(self, cutoff_datetime: datetime) -> List[Dict]:
-        """Get profiles that haven't been used since cutoff date and aren't in cold storage."""
-        from database.repositories.user_repository import UserRepository
-
-        with self.db_connection.get_session() as session:
-            repo = UserRepository(session)
-            users = repo.get_inactive_users(cutoff_datetime)
-            return [repo.user_to_dict(user) for user in users]
-
     def get_profiles_by_avd_names(self, avd_names: List[str]) -> Dict[str, Dict]:
         """Get profiles that have one of the specified AVD names."""
         from database.repositories.user_repository import UserRepository

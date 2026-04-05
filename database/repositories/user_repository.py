@@ -529,30 +529,6 @@ class UserRepository:
             logger.error(f"Database error getting user by emulator_id: {e}")
             return None
 
-    def get_inactive_users(self, cutoff_datetime: datetime) -> List[User]:
-        """Get users who haven't been active since the cutoff date and aren't in cold storage."""
-        try:
-            # First, get users who have cold_storage_date set (to exclude them)
-            cold_storage_subquery = (
-                select(User.id)
-                .join(UserPreference)
-                .where(UserPreference.preference_key == "cold_storage_date")
-                .where(UserPreference.preference_value.is_not(None))
-            )
-
-            # Get users with last_used before cutoff and not in cold storage
-            stmt = (
-                select(User)
-                .where(User.last_used < cutoff_datetime)
-                .where(User.id.notin_(cold_storage_subquery))
-                .where(User.email != "seed_clone@amazon.com")  # Never archive seed clone
-                .options(selectinload(User.preferences))
-            )
-            return list(self.session.execute(stmt).scalars())
-        except SQLAlchemyError as e:
-            logger.error(f"Database error getting inactive users: {e}")
-            return []
-
     def get_users_with_avd_names(self, avd_names: List[str]) -> List[User]:
         """Get users who have one of the specified AVD names."""
         try:

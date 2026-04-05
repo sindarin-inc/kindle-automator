@@ -267,11 +267,6 @@ from server.resources.auth_check_resource import AuthCheckResource
 from server.resources.auth_resource import AuthResource
 from server.resources.book_open_resource import BookOpenResource
 from server.resources.books_resources import BooksResource, BooksStreamResource
-from server.resources.cold_storage_resources import (
-    ColdStorageArchiveResource,
-    ColdStorageRestoreResource,
-    ColdStorageStatusResource,
-)
 from server.resources.fixtures_resource import FixturesResource
 from server.resources.idle_check_resources import IdleCheckResource
 from server.resources.image_resources import CoverImageResource, ImageResource
@@ -369,21 +364,6 @@ api.add_resource(WebVNCResource, "/web-vnc")
 
 api.add_resource(AuthDashboardResource, "/auth-dashboard")
 api.add_resource(
-    ColdStorageArchiveResource,
-    "/cold-storage/archive",
-    resource_class_kwargs={"server_instance": server},
-)
-api.add_resource(
-    ColdStorageStatusResource,
-    "/cold-storage/status",
-    resource_class_kwargs={"server_instance": server},
-)
-api.add_resource(
-    ColdStorageRestoreResource,
-    "/cold-storage/restore",
-    resource_class_kwargs={"server_instance": server},
-)
-api.add_resource(
     LogTimelineResource,
     "/logs/timeline",
     resource_class_kwargs={"server_instance": server},
@@ -469,24 +449,6 @@ def run_idle_check():
             logger.warning(f"Idle check failed with status {status_code}: {result}")
     except Exception as e:
         logger.warning(f"Error during scheduled idle check: {e}", exc_info=True)
-
-
-def run_cold_storage_check():
-    """Run cold storage archival check for profiles inactive for 30+ days."""
-    try:
-        logger.info("Running scheduled cold storage check...")
-        from server.utils.cold_storage_manager import ColdStorageManager
-
-        cold_storage_manager = ColdStorageManager.get_instance()
-        success_count, failure_count, storage_info = cold_storage_manager.archive_eligible_profiles(
-            days_inactive=30
-        )
-
-        logger.info(f"Cold storage check completed: {success_count} archived, {failure_count} failed")
-        if storage_info and storage_info.get("total_space_saved", 0) > 0:
-            logger.info(f"Total space saved: {storage_info['total_space_saved_human']}")
-    except Exception as e:
-        logger.warning(f"Error during scheduled cold storage check: {e}", exc_info=True)
 
 
 def cleanup_resources():
@@ -634,18 +596,9 @@ def main():
         name="Idle Emulator Check",
         replace_existing=True,
     )
-    # Add cold storage check - runs daily at 3 AM
-    scheduler.add_job(
-        func=run_cold_storage_check,
-        trigger=CronTrigger(hour=3, minute=0),
-        id="cold_storage_check",
-        name="Cold Storage Archival Check",
-        replace_existing=True,
-    )
     scheduler.start()
     app.scheduler = scheduler
     logger.info(f"Started APScheduler for idle checks ({idle_schedule_desc})")
-    logger.info("Started APScheduler for cold storage checks (daily at 3:00 AM)")
 
     # Clear Redis deduplication keys after all initialization is complete
     from server.core.redis_connection import clear_deduplication_keys_on_startup
