@@ -1,0 +1,15 @@
+---
+# sol-reader: single 1.9TB NVMe (Micron) for AVD storage at /mnt/storage.
+# The drive is already formatted ext4 and mounted via /etc/fstab (UUID-based)
+# during the rescue-system bootstrap, so the mount_drives role's stat check
+# on `raid_device` finds the device and skips mdadm/mkfs/etc. The mount step
+# is idempotent (already mounted -> no-op).
+#
+# Do not place sol-reader in [db]; web-app's `sol_postgres` container is the
+# data plane for both sol-prod and kindle-prod local databases.
+
+raid_device: /dev/nvme0n1
+raid_devices:
+  - /dev/nvme0n1
+mount_point: /mnt/storage
+filesystem_type: ext4

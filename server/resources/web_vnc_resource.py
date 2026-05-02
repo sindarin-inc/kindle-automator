@@ -72,7 +72,8 @@ class WebVNCResource(Resource):
                 server_hostname_map = {
                     "kindle-automator-1": "kindle1.sindarin.com",
                     "kindle-automator-3": "kindle3.sindarin.com",
-                    "sol-reader": "kindle-staging.sindarin.com",
+                    "kindle-automator-staging": "kindle-staging.sindarin.com",
+                    "sol-reader": "api-hetzner.sindarin.com",
                 }
 
                 # Determine the VNC host
