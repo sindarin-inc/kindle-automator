@@ -13,3 +13,4 @@ raid_devices:
   - /dev/nvme0n1
 mount_point: /mnt/storage
 filesystem_type: ext4
+kindle_public_host: api.sindarin.com

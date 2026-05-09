@@ -47,6 +47,22 @@
     proto: tcp
   when: "'db' not in group_names"
 
+- name: Allow Kindle raw VNC ports for iOS login
+  ufw:
+    rule: allow
+    port: 5900:5910
+    proto: tcp
+    comment: kindle raw VNC
+  when: "'db' not in group_names"
+
+- name: Allow Kindle rfbproxy WebSocket ports for browser login
+  ufw:
+    rule: allow
+    port: 7900:7910
+    proto: tcp
+    comment: kindle rfbproxy websocket
+  when: "'db' not in group_names"
+
 # PostgreSQL firewall rules are now handled in the postgres role
 
 - name: Enable UFW

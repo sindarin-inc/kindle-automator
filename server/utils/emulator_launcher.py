@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import platform
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -685,6 +686,53 @@ class EmulatorLauncher:
                 logger.warning(f"Error finding Kindle window ID: {e}, using full display")
                 window_id = None
 
+            vnc_clip_geometry = None
+            if window_id:
+                try:
+                    window_info = subprocess.run(
+                        ["xwininfo", "-id", window_id, "-display", f":{display_num}"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env=env,
+                        timeout=3,
+                    )
+                    if window_info.returncode == 0:
+                        width_match = re.search(r"Width:\s+(\d+)", window_info.stdout)
+                        height_match = re.search(r"Height:\s+(\d+)", window_info.stdout)
+                        x_match = re.search(r"Absolute upper-left X:\s+(-?\d+)", window_info.stdout)
+                        y_match = re.search(r"Absolute upper-left Y:\s+(-?\d+)", window_info.stdout)
+
+                        if width_match and height_match and x_match and y_match:
+                            window_width = int(width_match.group(1))
+                            window_height = int(height_match.group(1))
+                            window_x = int(x_match.group(1))
+                            window_y = int(y_match.group(1))
+
+                            if window_width % 4:
+                                clipped_width = window_width - (window_width % 4)
+                                if clipped_width >= 4:
+                                    vnc_clip_geometry = (
+                                        f"{clipped_width}x{window_height}+{window_x}+{window_y}"
+                                    )
+                                    logger.info(
+                                        "Using x11vnc -clip %s instead of -id %s because emulator "
+                                        "window width %s is not a multiple of 4; some VNC clients "
+                                        "render black frames for odd framebuffer widths",
+                                        vnc_clip_geometry,
+                                        window_id,
+                                        window_width,
+                                    )
+                                else:
+                                    logger.warning(
+                                        "Emulator window width %s is too small to safely align for VNC",
+                                        window_width,
+                                    )
+                    elif window_info.stderr.strip():
+                        logger.warning("Could not inspect emulator window geometry: %s", window_info.stderr)
+                except Exception as e:
+                    logger.warning(f"Error inspecting emulator window geometry: {e}", exc_info=True)
+
             # Start x11vnc
             vnc_cmd = [
                 "/usr/bin/x11vnc",
@@ -710,8 +758,10 @@ class EmulatorLauncher:
                 "-bg",
             ]
 
+            if vnc_clip_geometry:
+                vnc_cmd.extend(["-clip", vnc_clip_geometry])
             # Add -id flag if we found a window ID
-            if window_id:
+            elif window_id:
                 vnc_cmd.extend(["-id", window_id])
 
             subprocess.run(vnc_cmd, env=env, check=False, timeout=5)
