@@ -1109,6 +1109,12 @@ class EmulatorLauncher:
                 # For Linux, use standard emulator with VNC with dynamic port
                 emulator_cmd = [
                     f"{self.android_home}/emulator/emulator",
+                    # Without -no-metrics, once a crash populates the shared crashpad DB
+                    # (/tmp/android-root/emu-crash-*.db) the emulator pops a blocking
+                    # "send crash report?" consent dialog on the headless display and never
+                    # boots, which the launcher detects as a crash dialog -> "Failed to start
+                    # emulator" -> HTTP 500 for every user. Both macOS branches already pass it.
+                    "-no-metrics",
                     "-verbose",
                     "-feature",
                     "-accel",  # Disable hardware acceleration
