@@ -143,6 +143,8 @@ TITLE_NOT_AVAILABLE_DIALOG_BUTTONS = [
 
 # Filter button strategies
 FILTER_BUTTON_STRATEGIES = [
+    # Kindle 8.150+ renamed the filter button container to filter_icon_container.
+    by_id("filter_icon_container"),
     (AppiumBy.ID, "com.amazon.kindle:id/refine_menu_button_container"),
     (
         AppiumBy.XPATH,
