@@ -1,5 +1,7 @@
 from appium.webdriver.common.appiumby import AppiumBy
 
+from views.core.matchers import by_id_selected
+
 
 # Tab selection strategies
 def get_tab_selection_strategies(tab_name):
@@ -12,6 +14,9 @@ def get_tab_selection_strategies(tab_name):
         list: List of tuples containing strategies to detect if the tab is selected
     """
     return [
+        # Compose/classic-agnostic match (Kindle 8.150+ on Android 16 renders the nav
+        # as android.view.View with a bare '<tab>_tab' id and selected on the element).
+        by_id_selected(f"{tab_name.lower()}_tab"),
         # Primary strategy - check for exact content-desc match
         (AppiumBy.XPATH, f"//android.widget.LinearLayout[@content-desc='{tab_name}, Tab selected']"),
         # Secondary strategy - check for selected state in tab components
