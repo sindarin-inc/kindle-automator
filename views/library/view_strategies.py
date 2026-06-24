@@ -1,5 +1,7 @@
 from appium.webdriver.common.appiumby import AppiumBy
 
+from views.core.matchers import by_id, by_id_selected
+
 # Invalid Item dialog detection
 INVALID_ITEM_DIALOG_IDENTIFIERS = [
     (
@@ -59,12 +61,16 @@ EMPTY_LIBRARY_TEXT_INDICATORS = [
 ]
 
 LIBRARY_TAB_IDENTIFIERS = [
+    # Compose/classic-agnostic clickable nav element (Kindle 8.150+ bare-id View).
+    by_id("library_tab"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[@resource-id='com.amazon.kindle:id/library_tab']"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'LIBRARY, Tab')]"),
     (AppiumBy.XPATH, "//android.widget.TextView[@text='LIBRARY']"),
 ]
 
 LIBRARY_TAB_SELECTION_IDENTIFIERS = [
+    # Compose/classic-agnostic: library_tab View carries selected itself (8.150+).
+    by_id_selected("library_tab"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab selected']"),
     (
         AppiumBy.XPATH,
