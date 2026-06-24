@@ -1,7 +1,11 @@
 from appium.webdriver.common.appiumby import AppiumBy
 
+from views.core.matchers import by_id
+
 # Navigation elements for More tab
 MORE_TAB_STRATEGIES = [
+    # Compose/classic-agnostic: clickable bare-id 'more_tab' View on Kindle 8.150+.
+    by_id("more_tab"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='More, Tab']"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'More')]"),
     (AppiumBy.XPATH, "//android.widget.TextView[@text='MORE']"),

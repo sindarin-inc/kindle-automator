@@ -1,5 +1,7 @@
 from appium.webdriver.common.appiumby import AppiumBy
 
+from views.core.matchers import by_id
+
 # Invalid Item dialog elements
 INVALID_ITEM_DIALOG_BUTTONS = [
     (AppiumBy.XPATH, "//android.widget.Button[@text='REMOVE' and @resource-id='android:id/button1']"),
@@ -10,6 +12,9 @@ INVALID_ITEM_DIALOG_BUTTONS = [
 
 # Navigation elements
 LIBRARY_TAB_STRATEGIES = [
+    # Compose/classic-agnostic: the clickable nav element is a bare-id 'library_tab'
+    # View on Android 16 / Kindle 8.150+ (was a prefixed-id LinearLayout).
+    by_id("library_tab"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[@content-desc='LIBRARY, Tab']"),
     (AppiumBy.XPATH, "//android.widget.LinearLayout[contains(@content-desc, 'LIBRARY')]"),
     (AppiumBy.XPATH, "//android.widget.TextView[@text='LIBRARY']"),
